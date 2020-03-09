@@ -118,7 +118,7 @@
 #include "linenoise.h"
 
 #define LINENOISE_DEFAULT_HISTORY_MAX_LEN 100
-#define LINENOISE_MAX_LINE 4096
+#define LINENOISE_MAX_LINE 512
 
 static linenoiseCompletionCallback *completionCallback = NULL;
 static linenoiseHintsCallback *hintsCallback = NULL;
@@ -974,6 +974,11 @@ static void sanitize(char* src) {
 char *linenoise(const char *prompt) {
     char *buf = calloc(1, LINENOISE_MAX_LINE);
     int count = 0;
+
+	if(!buf) {
+		return buf;
+	}
+
     if (!dumbmode) {
         count = linenoiseRaw(buf, LINENOISE_MAX_LINE, prompt);
     } else {
