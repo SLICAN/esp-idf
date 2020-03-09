@@ -22,7 +22,9 @@
 /** SPI master clock is divided by 80MHz apb clock. Below defines are example frequencies, and are accurate. Be free to specify a random frequency, it will be rounded to closest frequency (to macros below if above 8MHz).
   * 8MHz
   */
-#define SPI_MASTER_FREQ_8M      (APB_CLK_FREQ/10)
+#define SPI_MASTER_FREQ_2M      (APB_CLK_FREQ/40)	///< 2MHz
+#define SPI_MASTER_FREQ_4M      (APB_CLK_FREQ/20)	///< 4MHz
+#define SPI_MASTER_FREQ_8M      (APB_CLK_FREQ/10)	///< 8MHz
 #define SPI_MASTER_FREQ_9M      (APB_CLK_FREQ/9)    ///< 8.89MHz
 #define SPI_MASTER_FREQ_10M     (APB_CLK_FREQ/8)    ///< 10MHz
 #define SPI_MASTER_FREQ_11M     (APB_CLK_FREQ/7)    ///< 11.43MHz
