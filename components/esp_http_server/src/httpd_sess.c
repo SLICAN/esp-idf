@@ -342,7 +342,7 @@ esp_err_t httpd_sess_close_lru(struct httpd_data *hd)
         if (hd->hd_sd[i].fd == -1) {
             return ESP_OK;
         }
-        if (hd->hd_sd[i].lru_counter < lru_counter) {
+        if(hd->hd_sd[i].lru_counter < lru_counter && hd->hd_sd[i].lru_counter) {
             lru_counter = hd->hd_sd[i].lru_counter;
             lru_fd = hd->hd_sd[i].fd;
         }
