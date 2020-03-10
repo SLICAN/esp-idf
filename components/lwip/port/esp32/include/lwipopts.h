@@ -665,6 +665,11 @@
    ---------------------------------------
 */
 /**
+ * LWIP_NOASSERT: Disable assert in LWIP.
+ */
+#define LWIP_NOASSERT
+
+/**
  * ETHARP_DEBUG: Enable debugging in etharp.c.
  */
 #define ETHARP_DEBUG                    LWIP_DBG_OFF
