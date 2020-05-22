@@ -20,6 +20,10 @@
 #include "provisioner_prov.h"
 #include "esp_ble_mesh_defs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     BTC_BLE_MESH_ACT_MESH_INIT = 0,
     BTC_BLE_MESH_ACT_PROV_ENABLE,
@@ -63,6 +67,9 @@ typedef enum {
     BTC_BLE_MESH_ACT_PROXY_CLIENT_SET_FILTER_TYPE,
     BTC_BLE_MESH_ACT_PROXY_CLIENT_ADD_FILTER_ADDR,
     BTC_BLE_MESH_ACT_PROXY_CLIENT_REMOVE_FILTER_ADDR,
+    BTC_BLE_MESH_ACT_START_BLE_ADVERTISING,
+    BTC_BLE_MESH_ACT_STOP_BLE_ADVERTISING,
+    BTC_BLE_MESH_ACT_DEINIT_MESH,
 } btc_ble_mesh_prov_act_t;
 
 typedef enum {
@@ -234,6 +241,16 @@ typedef union {
         uint16_t  addr_num;
         uint16_t *addr;
     } proxy_client_remove_filter_addr;
+    struct ble_mesh_start_ble_advertising_args {
+        esp_ble_mesh_ble_adv_param_t param;
+        esp_ble_mesh_ble_adv_data_t  data;
+    } start_ble_advertising;
+    struct ble_mesh_stop_ble_advertising_args {
+        uint8_t index;
+    } stop_ble_advertising;
+    struct ble_mesh_deinit_args {
+        esp_ble_mesh_deinit_param_t param;
+    } mesh_deinit;
 } btc_ble_mesh_prov_args_t;
 
 typedef union {
@@ -266,8 +283,6 @@ esp_ble_mesh_node_t *btc_ble_mesh_provisioner_get_node_with_uuid(const uint8_t u
 
 esp_ble_mesh_node_t *btc_ble_mesh_provisioner_get_node_with_addr(uint16_t unicast_addr);
 
-int btc_ble_mesh_deinit(esp_ble_mesh_deinit_param_t *param);
-
 int btc_ble_mesh_client_model_init(esp_ble_mesh_model_t *model);
 
 int btc_ble_mesh_client_model_deinit(esp_ble_mesh_model_t *model);
@@ -297,5 +312,9 @@ void btc_ble_mesh_model_cb_handler(btc_msg_t *msg);
 
 void btc_ble_mesh_prov_call_handler(btc_msg_t *msg);
 void btc_ble_mesh_prov_cb_handler(btc_msg_t *msg);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _BTC_BLE_MESH_PROV_H_ */

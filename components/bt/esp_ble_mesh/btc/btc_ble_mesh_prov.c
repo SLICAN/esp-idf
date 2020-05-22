@@ -18,6 +18,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include "adv.h"
 #include "mesh_proxy.h"
 #include "mesh.h"
 #include "access.h"
@@ -934,11 +935,6 @@ static void btc_ble_mesh_proxy_client_filter_status_recv_cb(u8_t conn_handle,
 }
 #endif /* CONFIG_BLE_MESH_GATT_PROXY_CLIENT */
 
-int btc_ble_mesh_deinit(esp_ble_mesh_deinit_param_t *param)
-{
-    return bt_mesh_deinit((struct bt_mesh_deinit_param *)param);
-}
-
 int btc_ble_mesh_client_model_init(esp_ble_mesh_model_t *model)
 {
     __ASSERT(model && model->op, "%s, Invalid parameter", __func__);
@@ -998,7 +994,7 @@ const esp_ble_mesh_comp_t *btc_ble_mesh_comp_get(void)
 
 u16_t btc_ble_mesh_provisioner_get_prov_node_count(void)
 {
-    return bt_mesh_provisioner_get_prov_node_count();
+    return bt_mesh_provisioner_get_node_count();
 }
 
 /* Configuration Models */
@@ -1787,7 +1783,7 @@ void btc_ble_mesh_prov_call_handler(btc_msg_t *msg)
         act = ESP_BLE_MESH_PROVISIONER_DELETE_NODE_WITH_ADDR_COMP_EVT;
         param.provisioner_delete_node_with_addr_comp.unicast_addr = arg->delete_node_with_addr.unicast_addr;
         param.provisioner_delete_node_with_addr_comp.err_code =
-            bt_mesh_provisioner_delete_node_with_addr(arg->delete_node_with_addr.unicast_addr);
+            bt_mesh_provisioner_delete_node_with_node_addr(arg->delete_node_with_addr.unicast_addr);
         break;
 #endif /* CONFIG_BLE_MESH_PROVISIONER */
 #if CONFIG_BLE_MESH_FAST_PROV
@@ -1884,6 +1880,30 @@ void btc_ble_mesh_prov_call_handler(btc_msg_t *msg)
         break;
     }
 #endif /* CONFIG_BLE_MESH_GATT_PROXY_CLIENT */
+#if CONFIG_BLE_MESH_SUPPORT_BLE_ADV
+    case BTC_BLE_MESH_ACT_START_BLE_ADVERTISING: {
+        struct bt_mesh_ble_adv_param *set = (struct bt_mesh_ble_adv_param *)&arg->start_ble_advertising.param;
+        struct bt_mesh_ble_adv_data *data = NULL;
+        if (arg->start_ble_advertising.data.adv_data_len ||
+            arg->start_ble_advertising.data.scan_rsp_data_len) {
+            data = (struct bt_mesh_ble_adv_data *)&arg->start_ble_advertising.data;
+        }
+        act = ESP_BLE_MESH_START_BLE_ADVERTISING_COMP_EVT;
+        param.start_ble_advertising_comp.err_code =
+            bt_mesh_start_ble_advertising(set, data, &param.start_ble_advertising_comp.index);
+        break;
+    }
+    case BTC_BLE_MESH_ACT_STOP_BLE_ADVERTISING:
+        act = ESP_BLE_MESH_STOP_BLE_ADVERTISING_COMP_EVT;
+        param.stop_ble_advertising_comp.index = arg->stop_ble_advertising.index;
+        param.stop_ble_advertising_comp.err_code =
+            bt_mesh_stop_ble_advertising(arg->stop_ble_advertising.index);
+        break;
+#endif /* CONFIG_BLE_MESH_SUPPORT_BLE_ADV */
+    case BTC_BLE_MESH_ACT_DEINIT_MESH:
+        act = ESP_BLE_MESH_DEINIT_MESH_COMP_EVT;
+        param.deinit_mesh_comp.err_code = bt_mesh_deinit((struct bt_mesh_deinit_param *)&arg->mesh_deinit.param);
+        break;
     default:
         BT_WARN("%s, Invalid msg->act %d", __func__, msg->act);
         return;
