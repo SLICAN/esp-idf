@@ -829,6 +829,62 @@ esp_err_t httpd_query_key_value(const char *qry_str, const char *key, char *val,
     return ESP_ERR_NOT_FOUND;
 }
 
+/* Helper function to get a cookie value from a cookie string of the type "cookie1=val1; cookie2=val2" */
+esp_err_t httpd_cookie_key_value(const char *cookie_str, const char *key, char *val, size_t val_size) {
+    if(cookie_str == NULL || key == NULL || val == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *cookie_ptr = cookie_str;
+    const size_t buf_len = val_size;
+
+    while(strlen(cookie_ptr)) {
+        /* Search for the '=' character. Else, it would mean
+         * that the parameter is invalid */
+        const char *val_ptr = strchr(cookie_ptr, '=');
+        if(!val_ptr) {
+            break;
+        }
+        size_t offset = val_ptr - cookie_ptr;
+
+        /* If the key, does not match, continue searching.
+         * Compare lengths first as key from cookie string is not
+         * null terminated (has '=' in the end) */
+        if((offset != strlen(key)) || (strncmp(cookie_ptr, key, offset))) {
+            /* Get the name=val string. Multiple name=value pairs
+             * are separated by '; ' */
+            cookie_ptr = strchr(val_ptr, ' ');
+            if(!cookie_ptr) {
+                break;
+            }
+            cookie_ptr++;
+            continue;
+        }
+
+        /* Locate start of next query */
+        cookie_ptr = strchr(++val_ptr, ';');
+        /* Or this could be the last query, in which
+         * case get to the end of query string */
+        if(!cookie_ptr) {
+            cookie_ptr = val_ptr + strlen(val_ptr);
+        }
+
+        /* Update value length, including one byte for null */
+        val_size = cookie_ptr - val_ptr + 1;
+
+        /* Copy value to the caller's buffer. */
+        strlcpy(val, val_ptr, MIN(val_size, buf_len));
+
+        /* If buffer length is smaller than needed, return truncation error */
+        if(buf_len < val_size) {
+            return ESP_ERR_HTTPD_RESULT_TRUNC;
+        }
+        return ESP_OK;
+    }
+    ESP_LOGD(TAG, LOG_FMT("cookie %s not found"), key);
+    return ESP_ERR_NOT_FOUND;
+}
+
 size_t httpd_req_get_url_query_len(httpd_req_t *r)
 {
     if (r == NULL) {
