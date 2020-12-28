@@ -190,6 +190,8 @@ static const char *edesc[] = {
 
 #define NUM_EDESCS (sizeof(edesc) / sizeof(char *))
 
+extern int _invalid_pc_placeholder;
+
 static void commonErrorHandler(XtExcFrame *frame);
 static inline void disableAllWdts(void);
 static void illegal_instruction_helper(XtExcFrame *frame);
@@ -247,9 +249,9 @@ void panicHandler(XtExcFrame *frame)
         while (1);
     }
 
-    //The core which triggers the interrupt watchdog will delay 1 us, so the other core can save its frame.
+    //The core which triggers the interrupt watchdog will delay 500 us, so the other core can save its frame.
     if (frame->exccause == PANIC_RSN_INTWDT_CPU0 || frame->exccause == PANIC_RSN_INTWDT_CPU1) {
-        ets_delay_us(1);
+        ets_delay_us(500);
     }
 
     if (frame->exccause == PANIC_RSN_CACHEERR && esp_cache_err_get_cpuid() != core_id) {
@@ -311,6 +313,14 @@ void panicHandler(XtExcFrame *frame)
 
     if (esp_cpu_in_ocd_debug_mode()) {
         disableAllWdts();
+        if (!(esp_ptr_executable((void *)((frame->pc & 0x3fffffffU) | 0x40000000U)) && (frame->pc & 0xC0000000U))) {
+            /* Xtensa ABI sets the 2 MSBs of the PC according to the windowed call size
+             * Incase the PC is invalid, GDB will fail to translate addresses to function names
+             * Hence replacing the PC to a placeholder address in case of invalid PC
+             */
+            frame->pc = (uint32_t)&_invalid_pc_placeholder;
+        }
+
         if (frame->exccause == PANIC_RSN_INTWDT_CPU0 ||
             frame->exccause == PANIC_RSN_INTWDT_CPU1) {
             timer_ll_wdt_clear_intr_status(&TIMERG1);
@@ -356,13 +366,21 @@ void xt_unhandled_exception(XtExcFrame *frame)
                                       APPTRACE_ONPANIC_HOST_FLUSH_TMO);
 #endif
 #endif
+            if (!(esp_ptr_executable((void *)((frame->pc & 0x3fffffffU) | 0x40000000U)) && (frame->pc & 0xC0000000U))) {
+                /* Xtensa ABI sets the 2 MSBs of the PC according to the windowed call size
+                 * Incase the PC is invalid, GDB will fail to translate addresses to function names
+                 * Hence replacing the PC to a placeholder address in case of invalid PC
+                 */
+                frame->pc = (uint32_t)&_invalid_pc_placeholder;
+            }
+
             //Stick a hardware breakpoint on the address the handler returns to. This way, the OCD debugger
             //will kick in exactly at the context the error happened.
             setFirstBreakpoint(frame->pc);
             return;
         }
         panicPutStr(". Exception was unhandled.\r\n");
-        if (exccause == 0 /* IllegalInstruction */) {
+        if (exccause == EXCCAUSE_ILLEGAL) {
             illegal_instruction_helper(frame);
         }
         esp_reset_reason_set_hint(ESP_RST_PANIC);
@@ -468,9 +486,10 @@ static void doBacktrace(XtExcFrame *exc_frame, int depth)
     putEntry(esp_cpu_process_stack_pc(stk_frame.pc), stk_frame.sp);
 
     //Check if first frame is valid
-    bool corrupted = (esp_stack_ptr_is_sane(stk_frame.sp) &&
-                      esp_ptr_executable((void*)esp_cpu_process_stack_pc(stk_frame.pc))) ?
-                      false : true;
+    bool corrupted = !(esp_stack_ptr_is_sane(stk_frame.sp) &&
+                       (esp_ptr_executable((void *)esp_cpu_process_stack_pc(stk_frame.pc)) ||
+                        /* Ignore the first corrupted PC in case of InstrFetchProhibited */
+                        exc_frame->exccause == EXCCAUSE_INSTR_PROHIBITED));
     uint32_t i = ((depth <= 0) ? INT32_MAX : depth) - 1;    //Account for stack frame that's already printed
     while (i-- > 0 && stk_frame.next_pc != 0 && !corrupted) {
         if (!esp_backtrace_get_next_frame(&stk_frame)) {    //Get next stack frame

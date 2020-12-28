@@ -112,6 +112,11 @@ struct object { long placeholder[ 10 ]; };
 void __register_frame_info (const void *begin, struct object *ob);
 extern char __eh_frame[];
 
+#ifdef CONFIG_COMPILER_CXX_EXCEPTIONS
+// workaround for C++ exception large memory allocation
+void _Unwind_SetEnableExceptionFdeSorting(unsigned char enable);
+#endif // CONFIG_COMPILER_CXX_EXCEPTIONS
+
 //If CONFIG_SPIRAM_IGNORE_NOTFOUND is set and external RAM is not found or errors out on testing, this is set to false.
 static bool s_spiram_okay=true;
 
@@ -386,10 +391,20 @@ void start_cpu0_default(void)
     assert(err == ESP_OK && "Failed to init pthread module!");
 
     do_global_ctors();
+
+#ifdef CONFIG_COMPILER_CXX_EXCEPTIONS
+    ESP_EARLY_LOGD(TAG, "Setting C++ exception workarounds.");
+    _Unwind_SetEnableExceptionFdeSorting(0);
+#endif // CONFIG_COMPILER_CXX_EXCEPTIONS
+
 #if CONFIG_ESP_INT_WDT
     esp_int_wdt_init();
     //Initialize the interrupt watch dog for CPU0.
     esp_int_wdt_cpu_init();
+#else
+#if CONFIG_ESP32_ECO3_CACHE_LOCK_FIX
+    assert(!soc_has_cache_lock_bug() && "ESP32 Rev 3 + Dual Core + PSRAM requires INT WDT enabled in project config!");
+#endif
 #endif
     esp_cache_err_int_init();
     esp_crosscore_int_init();

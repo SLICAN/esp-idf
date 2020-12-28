@@ -26,6 +26,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/portable.h"
 #include "hal/emac.h"
 #include "soc/soc.h"
 #include "sdkconfig.h"
@@ -451,8 +452,12 @@ esp_eth_mac_t *esp_eth_mac_new_esp32(const eth_mac_config_t *config)
               "create pm lock failed", err, NULL);
 #endif
     /* create rx task */
-    BaseType_t xReturned = xTaskCreate(emac_esp32_rx_task, "emac_rx", config->rx_task_stack_size, emac,
-                                       config->rx_task_prio, &emac->rx_task_hdl);
+    BaseType_t core_num = tskNO_AFFINITY;
+    if (config->flags & ETH_MAC_FLAG_PIN_TO_CORE) {
+        core_num = xPortGetCoreID();
+    }
+    BaseType_t xReturned = xTaskCreatePinnedToCore(emac_esp32_rx_task, "emac_rx", config->rx_task_stack_size, emac,
+                           config->rx_task_prio, &emac->rx_task_hdl, core_num);
     MAC_CHECK(xReturned == pdPASS, "create emac_rx task failed", err, NULL);
     return &(emac->parent);
 
@@ -496,6 +501,18 @@ IRAM_ATTR void emac_hal_rx_complete_cb(void *arg)
 }
 
 IRAM_ATTR void emac_hal_rx_unavail_cb(void *arg)
+{
+    emac_hal_context_t *hal = (emac_hal_context_t *)arg;
+    emac_esp32_t *emac = __containerof(hal, emac_esp32_t, hal);
+    BaseType_t high_task_wakeup;
+    /* notify receive task */
+    vTaskNotifyGiveFromISR(emac->rx_task_hdl, &high_task_wakeup);
+    if (high_task_wakeup == pdTRUE) {
+        emac->isr_need_yield = true;
+    }
+}
+
+IRAM_ATTR void emac_hal_rx_early_cb(void *arg)
 {
     emac_hal_context_t *hal = (emac_hal_context_t *)arg;
     emac_esp32_t *emac = __containerof(hal, emac_esp32_t, hal);

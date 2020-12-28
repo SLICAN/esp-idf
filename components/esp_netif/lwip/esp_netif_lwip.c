@@ -33,6 +33,10 @@
 #include "lwip/dns.h"
 #endif
 
+#if CONFIG_LWIP_TCP_ISN_HOOK
+#include "tcp_isn.h"
+#endif
+
 #include "esp_netif_lwip_ppp.h"
 #include "dhcpserver/dhcpserver.h"
 #include "dhcpserver/dhcpserver_options.h"
@@ -47,8 +51,10 @@
 #define ESP_NETIF_HOSTNAME_MAX_SIZE    32
 
 /**
- * @brief lwip thread safe tcpip function utility macro
+ * @brief lwip thread safe tcpip function utility macros
  */
+#define _RUN_IN_LWIP_TASK(function, netif, param) { return esp_netif_lwip_ipc_call(function, netif, (void *)(param)); }
+
 #define _RUN_IN_LWIP_TASK_IF_SUPPORTED(function, netif, param) \
 {                                                              \
     if (netif->is_ppp_netif) {                                 \
@@ -140,6 +146,8 @@ static esp_netif_t* esp_netif_is_active(esp_netif_t *arg)
  * @brief This function sets default netif no matter which implementation used
  *
  * @param esp_netif handle to network interface
+ *
+ * @note: This function must be called from lwip thread
  */
 static void esp_netif_set_default_netif(esp_netif_t *esp_netif)
 {
@@ -151,14 +159,17 @@ static void esp_netif_set_default_netif(esp_netif_t *esp_netif)
 }
 
 /**
- * @brief This function sets default routing netif based on priorities of all interfaces which are up
- * @param esp_netif current interface which just updated state
- * @param action updating action (on-off)
+ * @brief tcpip thread version of esp_netif_update_default_netif
  *
- * @note: This function must be called from lwip thread
- *
+ * @note This function and all functions called from this must be called from lwip task context
  */
-static void esp_netif_update_default_netif(esp_netif_t *esp_netif, esp_netif_action_t action) {
+static esp_err_t esp_netif_update_default_netif_lwip(esp_netif_api_msg_t *msg)
+{
+    esp_netif_t *esp_netif = msg->esp_netif;
+    esp_netif_action_t action = (esp_netif_action_t)msg->data;
+
+    ESP_LOGD(TAG, "%s %p", __func__, esp_netif);
+
     switch (action) {
         case ESP_NETIF_STARTED:
         {
@@ -200,6 +211,18 @@ static void esp_netif_update_default_netif(esp_netif_t *esp_netif, esp_netif_act
         }
         break;
     }
+    return ESP_OK;
+}
+
+/**
+ * @brief This function sets default routing netif based on priorities of all interfaces which are up
+ *
+ * @param esp_netif current interface which just updated state
+ * @param action updating action (on-off)
+ */
+static esp_err_t esp_netif_update_default_netif(esp_netif_t *esp_netif, esp_netif_action_t action)
+{
+    return esp_netif_lwip_ipc_call(esp_netif_update_default_netif_lwip, esp_netif, (void*)action);
 }
 
 void esp_netif_set_ip4_addr(esp_ip4_addr_t *addr, uint8_t a, uint8_t b, uint8_t c, uint8_t d)
@@ -244,6 +267,18 @@ esp_err_t esp_netif_init(void)
 {
     if (tcpip_initialized == false) {
         tcpip_initialized = true;
+#if CONFIG_LWIP_TCP_ISN_HOOK
+        uint8_t rand_buf[16];
+        /*
+         * This is early startup code where WiFi/BT is yet to be enabled and hence
+         * relevant entropy source is not available. However, bootloader enables
+         * SAR ADC based entropy source at its initialization, and our requirement
+         * of random bytes is pretty small (16), so we can assume that following
+         * API will provide sufficiently random data.
+         */
+        esp_fill_random(rand_buf, sizeof(rand_buf));
+        lwip_init_tcp_isn(esp_log_timestamp(), rand_buf);
+#endif
         tcpip_init(NULL, NULL);
         ESP_LOGD(TAG, "LwIP stack has been initialized");
     }
@@ -878,6 +913,11 @@ static esp_err_t esp_netif_dhcpc_start_api(esp_netif_api_msg_t *msg)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (esp_netif->dhcpc_status == ESP_NETIF_DHCP_STARTED) {
+        ESP_LOGD(TAG, "dhcp client already started");
+        return ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED;
+    }
+
     struct netif *p_netif = esp_netif->lwip_netif;
 
     esp_netif_reset_ip_info(esp_netif);
@@ -945,6 +985,11 @@ static esp_err_t esp_netif_dhcps_start_api(esp_netif_api_msg_t *msg)
 
     if (!esp_netif) {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (esp_netif->dhcps_status == ESP_NETIF_DHCP_STARTED) {
+        ESP_LOGD(TAG, "dhcp server already started");
+        return ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED;
     }
 
     struct netif *p_netif = esp_netif->lwip_netif;
@@ -1078,7 +1123,7 @@ static esp_err_t esp_netif_up_api(esp_netif_api_msg_t *msg)
     return ESP_OK;
 }
 
-esp_err_t esp_netif_up(esp_netif_t *esp_netif) _RUN_IN_LWIP_TASK_IF_SUPPORTED(esp_netif_up_api, esp_netif, NULL)
+esp_err_t esp_netif_up(esp_netif_t *esp_netif) _RUN_IN_LWIP_TASK(esp_netif_up_api, esp_netif, NULL)
 
 static esp_err_t esp_netif_down_api(esp_netif_api_msg_t *msg)
 {
@@ -1115,14 +1160,19 @@ static esp_err_t esp_netif_down_api(esp_netif_api_msg_t *msg)
     return ESP_OK;
 }
 
-esp_err_t esp_netif_down(esp_netif_t *esp_netif) _RUN_IN_LWIP_TASK_IF_SUPPORTED(esp_netif_down_api, esp_netif, NULL)
+esp_err_t esp_netif_down(esp_netif_t *esp_netif) _RUN_IN_LWIP_TASK(esp_netif_down_api, esp_netif, NULL)
 
 bool esp_netif_is_netif_up(esp_netif_t *esp_netif)
 {
     ESP_LOGV(TAG, "%s esp_netif:%p", __func__, esp_netif);
 
-    if (esp_netif != NULL && esp_netif->lwip_netif != NULL && netif_is_up(esp_netif->lwip_netif)) {
-        return true;
+    if (esp_netif != NULL && esp_netif->lwip_netif != NULL) {
+        if (esp_netif->is_ppp_netif) {
+            // ppp implementation uses netif_set_link_up/down to update link state
+            return netif_is_link_up(esp_netif->lwip_netif);
+        }
+        // esp-netif handlers and drivers take care to set_netif_up/down on link state update
+        return netif_is_up(esp_netif->lwip_netif);
     } else {
         return false;
     }
