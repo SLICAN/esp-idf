@@ -757,11 +757,6 @@ u32_t lwip_hook_tcp_isn(const struct ip_addr *local_ip, u16_t local_port,
    ---------------------------------------
 */
 /**
- * LWIP_NOASSERT: Disable assert in LWIP.
- */
-#define LWIP_NOASSERT
-
-/**
  * ETHARP_DEBUG: Enable debugging in etharp.c.
  */
 #define ETHARP_DEBUG                    LWIP_DBG_OFF
