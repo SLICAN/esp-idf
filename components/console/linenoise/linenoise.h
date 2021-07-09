@@ -71,6 +71,7 @@ void linenoiseSetMultiLine(int ml);
 void linenoiseSetDumbMode(int set);
 void linenoisePrintKeyCodes(void);
 void linenoiseAllowEmpty(bool);
+int linenoiseSetMaxLineLen(int len);
 
 #ifdef __cplusplus
 }
